@@ -1,0 +1,8 @@
+---
+- include: configure-certs.yaml
+  tags: config-certs
+- include: configure-terraform.yaml
+  tags: config-tf
+  ignore_errors: true
+- include: deploy-orc8r.yaml
+  tags: deploy-orc8r

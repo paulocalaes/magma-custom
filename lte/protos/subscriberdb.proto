@@ -1,0 +1,273 @@
+/*
+Copyright 2020 The Magma Authors.
+
+This source code is licensed under the BSD-style license found in the
+LICENSE file in the root directory of this source tree.
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+syntax = "proto3";
+
+import "orc8r/protos/common.proto";
+import "lte/protos/apn.proto";
+import "google/protobuf/field_mask.proto";
+
+package magma.lte;
+option go_package = "magma/lte/cloud/go/protos";
+
+// --------------------------------------------------------------------------
+// SubscriberID (or SID) uniquely identifies the subscriber across the system
+// --------------------------------------------------------------------------
+message SubscriberID {
+  string id = 1;
+
+  enum IDType {
+    IMSI = 0;
+  }
+  IDType type = 2;
+}
+
+message SubscriberIDSet {
+  repeated SubscriberID sids = 1;
+}
+
+// --------------------------------------------------------------------------
+// GSM/LTE subscription info
+// --------------------------------------------------------------------------
+message GSMSubscription {
+  enum GSMSubscriptionState {
+    INACTIVE = 0;
+    ACTIVE = 1;
+  }
+  GSMSubscriptionState state = 1;
+
+  enum GSMAuthAlgo {
+    PRECOMPUTED_AUTH_TUPLES = 0;  // default
+    // COMP128_V1 = 1; Not supported
+  }
+  GSMAuthAlgo auth_algo = 2;
+
+  // Authentication key (ki). Need for A3/A8 algos. This is not used
+  // when the auth_algo is PRECOMPUTED_AUTH_TUPLES.
+  bytes auth_key = 3;
+
+  // Precomputed (rand, sres, kc) tuples. Used when the auth_algo is
+  // PRECOMPUTED_AUTH_TUPLES.
+  repeated bytes auth_tuples = 4;
+}
+
+message LTESubscription {
+  enum LTESubscriptionState {
+    INACTIVE = 0;
+    ACTIVE = 1;
+  }
+  LTESubscriptionState state = 1;
+
+  enum LTEAuthAlgo {
+    MILENAGE = 0;  // default
+  }
+  LTEAuthAlgo auth_algo = 2;
+
+  // Authentication key (k).
+  bytes auth_key = 3;
+
+  // Operator configuration field (Op) signed with authentication key (k)
+  bytes auth_opc = 4;
+
+  repeated string assigned_base_names = 10;
+  repeated string assigned_policies = 11;
+}
+
+message SubscriberState {
+  // Next SEQ to be used for calculating the AUTN.
+  uint64 lte_auth_next_seq = 1;
+
+  // The Diameter address of the 3GPP AAA Server which is serving the user.
+  // An empty string indicates that no server is currently serving the user.
+  string tgpp_aaa_server_name = 2;
+
+  // Whether the subscribers User Status is REGISTERED or NOT_REGISTERED.
+  bool tgpp_aaa_server_registered = 3;
+}
+
+// For details about values read 3GPP 24.302
+enum AccessNetworkIdentifier {
+  HRPD = 0;
+  WIMAX = 1;
+  WLAN = 2;
+  ETHERNET = 3;
+}
+
+message SubscriberAPNConfig {
+  uint32 apn_id = 1;
+  string assigned_static_ip = 2;
+}
+
+message Non3GPPUserProfile {
+  string msisdn = 1;
+
+  enum Non3GPPIPAccess {
+    // Subscriber has non-3GPP subscription access to EPC network
+    NON_3GPP_SUBSCRIPTION_ALLOWED = 0;
+
+    // Subscriber has no non-3GPP subscription access to EPC network
+    NON_3GPP_SUBSCRIPTION_BARRED = 1;
+  }
+  Non3GPPIPAccess non_3gpp_ip_access = 2;
+
+  enum Non3GPPIPAccessAPN {
+    // Enable all APNs for a subscriber
+    NON_3GPP_APNS_ENABLE = 0;
+
+    // Disable all APNs for a subscriber
+    NON_3GPP_APNS_DISABLE = 1;
+  }
+  Non3GPPIPAccessAPN non_3gpp_ip_access_apn = 3;
+
+  AggregatedMaximumBitrate ambr = 4;
+
+  repeated APNConfiguration apn_config = 5;
+
+  AccessNetworkIdentifier access_net_id = 6;
+
+  // subscriber specific APN config
+  repeated SubscriberAPNConfig subscriber_apn_config = 7;
+}
+
+// --------------------------------------------------------------------------
+// User subscription record. This record is serialized and stored in the DB.
+// --------------------------------------------------------------------------
+message SubscriberData {
+  // Unique indentifier for the subscriber
+  SubscriberID sid = 1;
+
+  GSMSubscription gsm = 2;
+
+  LTESubscription lte = 3;
+
+  magma.orc8r.NetworkID network_id = 4;
+
+  SubscriberState state = 5;
+
+  // Subscription profile
+  string sub_profile = 6;
+
+  Non3GPPUserProfile non_3gpp = 7;
+}
+
+message SubscriberUpdate {
+  // Updated subscription data
+  SubscriberData data = 1;
+
+  // Specifies the fields to be updated
+  // The mask can be individual subscription elements (Eg: 'lte.auth_key') or
+  // entire subset in the SubscriberData (Eg: 'lte' to update all lte.* fields)
+  google.protobuf.FieldMask mask = 2;
+}
+
+// --------------------------------------------------------------------------
+// SubscriberDB gateway service definition.
+// --------------------------------------------------------------------------
+service SubscriberDB {
+
+  // Adds a new subscriber to the store.
+  // Throws ALREADY_EXISTS if the subscriber already exists.
+  //
+  rpc AddSubscriber (SubscriberData) returns (magma.orc8r.Void) {}
+
+  // Deletes an existing subscriber.
+  // If the subscriber is not already present, this request is ignored.
+  //
+  rpc DeleteSubscriber (SubscriberID) returns (magma.orc8r.Void) {}
+
+  // Updates an existing subscriber.
+  // Throws NOT_FOUND if the subscriber is missing.
+  //
+  rpc UpdateSubscriber (SubscriberUpdate) returns (magma.orc8r.Void) {}
+
+  // Returns the SubscriberData for a subscriber.
+  // Throws NOT_FOUND if the subscriber is missing.
+  //
+  rpc GetSubscriberData (SubscriberID) returns (SubscriberData) {}
+
+  // List the subscribers in the store.
+  //
+  rpc ListSubscribers (magma.orc8r.Void) returns (SubscriberIDSet) {}
+}
+
+// --------------------------------------------------------------------------
+// SubscriberDB cloud service definition.
+// --------------------------------------------------------------------------
+service SubscriberDBCloud {
+  // CheckSubscribersInSync checks whether the client subscribers flat digest
+  // is up-to-date.
+  rpc CheckSubscribersInSync (CheckSubscribersInSyncRequest) returns (CheckSubscribersInSyncResponse) {}
+  // SyncSubscribers returns the changeset of subscribers between client and
+  // cloud if the set is small; if the set is large, returns signal to resync.
+  rpc SyncSubscribers (SyncSubscribersRequest) returns (SyncSubscribersResponse) {}
+  // ListSubscribers lists pages of subscribers stored.
+  rpc ListSubscribers (ListSubscribersRequest) returns (ListSubscribersResponse) {}
+}
+
+message CheckSubscribersInSyncRequest {
+  // flat_digest is the deterministic digest of the full set of subscriber
+  // objects stored on the client side.
+  Digest flat_digest = 1;
+}
+
+message CheckSubscribersInSyncResponse {
+  // in_sync is true if client's existing subscribers match those on the server.
+  bool in_sync = 1;
+}
+
+message SyncSubscribersRequest {
+  // per_sub_digest is a set of digests for each client-side subscriber, indexed
+  // by their IDs (IMSI).
+  map<string, Digest> per_sub_digests = 1;
+}
+
+message SyncSubscribersResponse {
+  // resync is true if the client-server data difference is too big and an
+  // overall resync is needed. If true, all subscriber changesets will be empty.
+  bool resync = 1;
+  // flat_digest is the deterministic digest of all server-side subscribers.
+  Digest flat_digest = 2;
+  // per_sub_digests is a set of digests for each server-side subscriber, indexed
+  // by their IDs (IMSI).
+  map<string, Digest> per_sub_digests = 3;
+  // added_modified is the set of all subscriber data modified/added on the server
+  // side, indexed by their IDs (IMSI).
+  map<string, SubscriberData> added_modified = 4;
+  // removed is a list of IDs for subscribers removed on the server side.
+  repeated string removed = 5;
+}
+
+message ListSubscribersRequest {
+  // page_size is the maximum number of entities returned per request.
+  uint32 page_size = 1;
+  // page_token is a serialized entity page token for paginated loads.
+  string page_token = 2;
+}
+
+message ListSubscribersResponse {
+  repeated SubscriberData subscribers = 1;
+  // next_page_token is a serialized entity page token for subsequent paginated
+  // loads.
+  string next_page_token = 2;
+  // flat_digest is the server-defined, deterministic digest of the full set of
+  // returned subscriber objects.
+  Digest flat_digest = 3;
+  // per_sub_digests is a set of per-subscriber digests, indexed by the
+  // subscriber IDs (IMSI).
+  map<string, Digest> per_sub_digests = 4;
+}
+
+message Digest {
+  // md5_base64_digest is a base64-encoded MD5 digest of a set of subscriber protos.
+  string md5_base64_digest = 1;
+}

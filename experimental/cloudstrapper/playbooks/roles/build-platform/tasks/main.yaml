@@ -1,0 +1,14 @@
+---
+
+- include: py-packages.yaml
+  tags: py
+- include: build-tools-packages.yaml
+  tags: tools
+- include: magma-repo.yaml
+  tags: setupMagma
+- include: build-magma.yaml
+  tags: buildMagma
+- include: publish-magma.yaml
+  tags: pubMagma
+- include: publish-helm.yaml
+  tags: pubHelm

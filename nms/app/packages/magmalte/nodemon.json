@@ -1,0 +1,12 @@
+{
+  "verbose": true,
+  "watch": [
+    "../../packages/fbcnms-magma-api",
+    "config/",
+    "scripts/",
+    "server/",
+    "grafana/",
+    "alerts/"
+  ],
+  "exec": "node -r '@fbcnms/babel-register'"
+}
